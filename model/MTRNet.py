@@ -216,6 +216,55 @@ class CAB(nn.Module):
 
 
 
+
+class MTR_Model_1(nn.Module):
+    def __init__(self, image_size=128, in_channels=3, embed_dim=32, win_size=8, mlp_ratio=4., qkv_bias=True,
+                 qk_scale=None, drop_rate=0., attention_drop=0., norm_layer=nn.LayerNorm, use_checkpoint=False,
+                 depths=(2, 2, 2, 2, 2, 2, 2), num_heads=(1, 2, 4, 8, 8, 4, 2), token_projection='linear',
+                 token_mlp='ffn', se_layer=False,
+                 drop_path_rate=0.1, dowsample=DownSample, upsample=UpSample):
+        super(MTR_Model_1, self).__init__()
+        self.u_former1 = U_former(image_size, in_channels, embed_dim, win_size, mlp_ratio, qkv_bias, qk_scale,
+                                  drop_rate, attention_drop, norm_layer, use_checkpoint, depths, num_heads,
+                                  token_projection,
+                                  token_mlp, se_layer, drop_path_rate, dowsample, upsample, csff=False)
+        self.sam = SAM(embed_dim * 2, kernel_size=1, bias=qkv_bias)
+
+    def forward(self, x):
+        # x.shape - B C H W
+        B, C, H, W = x.shape
+
+        # Multi-Patch Hierarchy: Split Image into four non-overlapping patches
+        x2_top_img = x[:, :, 0:int(H/2), :]
+        x2_bot_img = x[:, :, int(H/2):H, :]
+
+        # Four Patches for Stage 4
+        x1_ltop_img = x2_top_img[:, :, :, 0:int(W / 2)]
+        x1_rtop_img = x2_top_img[:, :, :, int(W / 2):W]
+        x1_lbot_img = x2_bot_img[:, :, :, 0:int(W / 2)]
+        x1_rbot_img = x2_bot_img[:, :, :, int(W / 2):W]
+
+        feat1_ltop_encoders, res1_ltop_decoders = self.u_former1(x1_ltop_img)
+        feat1_rtop_encoders, res1_rtop_decoders = self.u_former1(x1_rtop_img)
+        feat1_lbot_encoders, res1_lbot_decoders = self.u_former1(x1_lbot_img)
+        feat1_rbot_encoders, res1_rbot_decoders = self.u_former1(x1_rbot_img)
+
+        # Concat deep feature
+        feat1_top_encoders = [torch.cat((k,v), 2) for k,v in zip(feat1_ltop_encoders, feat1_rtop_encoders)]
+        feat1_bot_encoders = [torch.cat((k, v), 2) for k, v in zip(feat1_lbot_encoders, feat1_rbot_encoders)]
+        res1_top_decoders = [torch.cat((k, v), 2) for k, v in zip(res1_ltop_decoders, res1_rtop_decoders)]
+        res1_bot_decoders = [torch.cat((k, v), 2) for k, v in zip(res1_lbot_decoders, res1_rbot_decoders)]
+
+        feat1_encoders = [torch.cat((k,v), 1) for k,v in zip(feat1_top_encoders, feat1_bot_encoders)]
+        res1_decoders = [torch.cat((k,v), 1) for k,v in zip(res1_top_decoders, res1_bot_decoders)]
+
+
+        x1_sam_feature, x1_img = self.sam(res1_decoders[-1], x)
+
+        return [feat1_encoders, res1_decoders, x1_img]
+
+
+
 class MTR_Model(nn.Module):
     def __init__(self, image_size=128, in_channels=3, embed_dim=32, win_size=8, mlp_ratio=4., qkv_bias=True,
                  qk_scale=None, drop_rate=0., attention_drop=0., norm_layer=nn.LayerNorm, use_checkpoint=False,

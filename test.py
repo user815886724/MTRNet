@@ -1,7 +1,7 @@
 from utils.data_util import TrainDataLoader
 from model.MTRNet import InputProjection
 from model.MTRNet import OutputProjection,SepConv2d, LinearProjection, InputProjection, ConvProjection,\
-    SELayer, image_matrix_mul, WindowAttention,TransformerVision, TransformerBlocks, MTR_Model
+    SELayer, image_matrix_mul, WindowAttention,TransformerVision, TransformerBlocks, MTR_Model_1
 import torch
 
 from torch.utils.data import DataLoader
@@ -76,7 +76,8 @@ def test_TransformerBlocks():
     print(y.shape)
 
 def test_MTR(x):
-    MTR = MTR_Model()
+    MTR = MTR_Model_1()
+    MTR.cuda()
     MTR(x)
 
 
@@ -88,5 +89,6 @@ if __name__ == '__main__':
     for input_img, target_img, file_name in loader:
         B, C, H, W = input_img.shape
         InputProjection()(input_img)
+        input_img.cuda()
         test_MTR(input_img)
         print('success')
