@@ -1,10 +1,12 @@
 from utils.data_util import TrainDataLoader
 from model.MTRNet import InputProjection
 from model.MTRNet import OutputProjection,SepConv2d, LinearProjection, InputProjection, ConvProjection,\
-    SELayer, image_matrix_mul, WindowAttention,TransformerVision, TransformerBlocks, MTR_Model_1
+    SELayer, image_matrix_mul, WindowAttention,TransformerVision, TransformerBlocks, Low_MTR_Model, High_MTR_Model
 import torch
+import os
 
 from torch.utils.data import DataLoader
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 # 测试 SepConv2d功能
@@ -75,10 +77,14 @@ def test_TransformerBlocks():
     y = output_projection(y)
     print(y.shape)
 
-def test_MTR(x):
-    MTR = MTR_Model_1()
-    MTR.cuda()
-    MTR(x)
+# def test_MTR(x):
+#     MTR = Low_MTR_Model()
+#     # MTR.cuda()
+#     return MTR(x)
+
+def test_High_MTR(x, sam, encoders, decoders):
+    High_MTR = Low_MTR_Model()
+    High_MTR(x, sam, encoders, decoders)
 
 
 if __name__ == '__main__':
@@ -86,9 +92,26 @@ if __name__ == '__main__':
 
     train_path = 'data/train'
     loader = DataLoader(dataset=TrainDataLoader(train_path, {'patch_size':256}), batch_size=4)
+
+    # MTR = Low_MTR_Model()
+    # for input_img, target_img, file_name in loader:
+    #     B, C, H, W = input_img.shape
+    #     # InputProjection()(input_img)
+    #     feat1_encoders, res1_decoders, x1_sam_feature, x1_img = MTR(input_img)
+    #     # high_model = High_MTR_Model()
+    #     # high_model(input_img, x1_sam_feature, feat1_encoders, res1_decoders)
+    #     print('success')
+    # torch.save({
+    #     'state_dict': MTR.state_dict()
+    # }, os.path.join('model',"model_latest.pth"))
+
+
+    MTR = Low_MTR_Model()
+    H_MTR = High_MTR_Model()
+    checkpoint = torch.load(os.path.join('model', "model_latest.pth"))
+    MTR.load_state_dict(checkpoint["state_dict"])
     for input_img, target_img, file_name in loader:
-        B, C, H, W = input_img.shape
-        InputProjection()(input_img)
-        input_img.cuda()
-        test_MTR(input_img)
+        feat1_encoders, res1_decoders, x1_sam_feature, x1_img = MTR(input_img)
+        H_MTR(input_img, x1_sam_feature, feat1_encoders, res1_decoders)
         print('success')
+        # MTR(input_img, x1_sam_feature, feat1_encoders, res1_decoders)

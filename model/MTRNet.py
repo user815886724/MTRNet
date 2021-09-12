@@ -156,6 +156,29 @@ class UpSample(nn.Module):
         return flops
 
 
+# final UpSample Block
+class FinalUpSample(nn.Module):
+    def __init__(self, in_channel, out_channel):
+        super(FinalUpSample, self).__init__()
+        self.de_conv = nn.Sequential(
+            nn.ConvTranspose2d(in_channel, out_channel, kernel_size=3, stride=1, padding=1),
+        )
+        self.in_channel = in_channel
+        self.out_channel = out_channel
+
+    def forward(self, x):
+        x = x.permute(0, 3, 1, 2).contiguous() # B C H W
+        out = self.de_conv(x).permute(0, 2, 3, 1).contiguous()  # B H W C
+        return out
+
+    def flops(self, H, W):
+        flops = 0
+        # conv
+        flops += H * 2 * W * 2 * self.in_channel * self.out_channel * 2 * 2
+        print("UpSample:{%.2f}" % (flops / 1e9))
+        return flops
+
+
 # 有监督的注意力模块：Supervised Attention Module
 class SAM(nn.Module):
     def __init__(self, in_channels, kernel_size, bias):
@@ -170,7 +193,7 @@ class SAM(nn.Module):
         img = self.conv2(x) + origin_x
         x2 = torch.sigmoid(self.conv3(img))
         x1 = x1 * x2
-        x1 = x1+x
+        x1 = x1 + x
         return x1, img
 
 
@@ -215,20 +238,51 @@ class CAB(nn.Module):
         return res
 
 
+# high model architecture
+class High_MTR_Model(nn.Module):
+    def __init__(self, image_size=128, in_channels=3, embed_dim=32, win_size=8, mlp_ratio=4., qkv_bias=True,
+                 qk_scale=None, drop_rate=0., attention_drop=0., norm_layer=nn.LayerNorm, use_checkpoint=False,
+                 depths=(2, 2, 2, 2, 2, 2, 2), num_heads=(1, 2, 4, 8, 8, 4, 2), token_projection='linear',
+                 token_mlp='ffn', se_layer=False, drop_path_rate=0.1, dowsample=DownSample, upsample=UpSample, csff=True):
+        super(High_MTR_Model, self).__init__()
+
+        self.u_former2 = U_former(image_size, in_channels, embed_dim, win_size, mlp_ratio, qkv_bias, qk_scale,
+                                  drop_rate, attention_drop, norm_layer, use_checkpoint, depths, num_heads,
+                                  token_projection,
+                                  token_mlp, se_layer, drop_path_rate, dowsample, upsample, csff=csff)
+
+        self.concat = conv(embed_dim * 2, embed_dim, kernel_size=3, bias=qkv_bias)
+        self.input_projection = InputProjection(in_channel=in_channels, out_channel=embed_dim, kernel_size=3, stride=1, active_layer=nn.LeakyReLU)
+        self.pos_drop = nn.Dropout(p=drop_rate)
+        self.output_projection = OutputProjection(in_channel= 2*embed_dim, out_channel=in_channels, kernel_size=3, stride=1)
+
+    def forward(self, x, sam_feature=None, encoder_outs=None, decoder_outs=None):
+        y = self.input_projection(x)
+        y = self.pos_drop(y)
+        if sam_feature is not None:
+            y = self.concat(torch.cat([sam_feature, y.permute(0, 3, 1, 2)], 1)).permute(0, 2, 3, 1)
+        feat_encoders, res_decoders  = self.u_former2(y, encoder_outs=encoder_outs, decoder_outs=decoder_outs)
+        res_img = res_decoders[-1]
+        return res_img
 
 
-class MTR_Model_1(nn.Module):
+
+
+
+
+# low model architecture
+class Low_MTR_Model(nn.Module):
     def __init__(self, image_size=128, in_channels=3, embed_dim=32, win_size=8, mlp_ratio=4., qkv_bias=True,
                  qk_scale=None, drop_rate=0., attention_drop=0., norm_layer=nn.LayerNorm, use_checkpoint=False,
                  depths=(2, 2, 2, 2, 2, 2, 2), num_heads=(1, 2, 4, 8, 8, 4, 2), token_projection='linear',
                  token_mlp='ffn', se_layer=False,
                  drop_path_rate=0.1, dowsample=DownSample, upsample=UpSample):
-        super(MTR_Model_1, self).__init__()
+        super(Low_MTR_Model, self).__init__()
         self.u_former1 = U_former(image_size, in_channels, embed_dim, win_size, mlp_ratio, qkv_bias, qk_scale,
                                   drop_rate, attention_drop, norm_layer, use_checkpoint, depths, num_heads,
                                   token_projection,
                                   token_mlp, se_layer, drop_path_rate, dowsample, upsample, csff=False)
-        self.sam = SAM(embed_dim * 2, kernel_size=1, bias=qkv_bias)
+        self.sam = SAM(embed_dim, kernel_size=1, bias=qkv_bias)
 
     def forward(self, x):
         # x.shape - B C H W
@@ -261,10 +315,14 @@ class MTR_Model_1(nn.Module):
 
         x1_sam_feature, x1_img = self.sam(res1_decoders[-1], x)
 
-        return [feat1_encoders, res1_decoders, x1_img]
+        return feat1_encoders, res1_decoders, x1_sam_feature, x1_img
 
 
 
+
+
+
+# Overall model architecture
 class MTR_Model(nn.Module):
     def __init__(self, image_size=128, in_channels=3, embed_dim=32, win_size=8, mlp_ratio=4., qkv_bias=True,
                  qk_scale=None, drop_rate=0., attention_drop=0., norm_layer=nn.LayerNorm, use_checkpoint=False,
@@ -312,8 +370,8 @@ class MTR_Model(nn.Module):
         res1_top_decoders = [torch.cat((k, v), 2) for k, v in zip(res1_ltop_decoders, res1_rtop_decoders)]
         res1_bot_decoders = [torch.cat((k, v), 2) for k, v in zip(res1_lbot_decoders, res1_rbot_decoders)]
 
-        feat1_encoders = [torch.cat((k,v), 1) for k,v in zip(feat1_top_encoders, feat1_bot_encoders)]
-        res1_decoders = [torch.cat((k,v), 1) for k,v in zip(res1_top_decoders, res1_bot_decoders)]
+        feat1_encoders = [torch.cat((k,v), 3) for k,v in zip(feat1_top_encoders, feat1_bot_encoders)]
+        res1_decoders = [torch.cat((k,v), 3) for k,v in zip(res1_top_decoders, res1_bot_decoders)]
 
 
         x1_sam_feature, x1_img = self.sam(res1_decoders[-1], x)
@@ -357,7 +415,7 @@ class U_former(nn.Module):
         # Input/Output
         self.input_projection = InputProjection(in_channel=in_channels, out_channel=embed_dim, kernel_size=3, stride=1, active_layer=nn.LeakyReLU)
         # output 的输入channels根据模型架构来调整
-        # self.output_projection = OutputProjection(in_channel= 2*embed_dim, out_channel=in_channels, kernel_size=3, stride=1)
+        self.output_projection = OutputProjection(in_channel= 2*embed_dim, out_channel=in_channels, kernel_size=3, stride=1)
 
         # Encoder
         self.encoder_layer0 = TransformerBlocks(dim=embed_dim, input_resolution=(image_size, image_size), depth=depths[0], num_heads=num_heads[0],
@@ -425,7 +483,7 @@ class U_former(nn.Module):
                                                 norm_layer=norm_layer, use_checkpoint=use_checkpoint,
                                                 token_projection=token_projection, token_mlp=token_mlp,
                                                 se_layer=se_layer)
-
+        self.final_decoder = OutputProjection(in_channel= 2*embed_dim, out_channel=embed_dim, kernel_size=3, stride=1)
         # CSFF
         if csff:
             self.csff_encoder0 = nn.Conv2d(embed_dim, embed_dim, kernel_size=1, bias=qkv_bias)
@@ -460,10 +518,12 @@ class U_former(nn.Module):
     def extra_repr(self) -> str:
         return f"embed_dim={self.embed_dim}, token_projection={self.token_projection}, token_mlp={self.mlp},win_size={self.win_size}"
 
-    def forward(self, x, mask=None, encoder_outs=None, decoder_outs=None):
-        y = self.input_projection(x)
-        y = self.pos_drop(y)
-
+    def forward(self, x,  mask=None, encoder_outs=None, decoder_outs=None):
+        if not self.csff:
+            y = self.input_projection(x)
+            y = self.pos_drop(y)
+        else:
+            y = x
         # Encoder
         conv0 = self.encoder_layer0(y, mask=mask)
         if self.csff and encoder_outs is not None and decoder_outs is not None:
@@ -506,10 +566,13 @@ class U_former(nn.Module):
 
 
         # Output Projection
-        # y = self.output_projection(deconv2)
+        if self.csff:
+            y = self.output_projection(deconv2)
+        else:
+            y = self.final_decoder(deconv2).permute(0, 2, 3, 1)
 
         # return x+y
-        return [conv0, conv1, conv2], [deconv0, deconv1, deconv2]
+        return [conv0, conv1, conv2], [deconv0, deconv1, deconv2, y]
 
 
 
