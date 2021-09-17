@@ -49,7 +49,7 @@ torch.cuda.manual_seed_all(1234)
 
 
 ######### Set GPUs ###########
-if option.cpu:
+if not option.gpu:
     pass
 elif not torch.cuda.is_available():
     sys.exit('There are not GPU can used!!!')
@@ -63,7 +63,7 @@ else:
 
 
 if __name__ == '__main__':
-    train_dir = option.train_dir
+    train_dir = os.path.join(dir_name, option.train_dir)
     val_dir = option.val_dir
 
 
@@ -85,7 +85,7 @@ if __name__ == '__main__':
         raise Exception("Error optimizer...")
 
     ######### DataParallel ###########
-    if not option.cpu:
+    if option.gpu:
         model = torch.nn.DataParallel(model)
         model.cuda()
 
@@ -124,7 +124,7 @@ if __name__ == '__main__':
     ######### Loss ###########
     criterion_char = losses.CharbonnierLoss()
     criterion_edge = losses.EdgeLoss(opt=option)
-    if not option.cpu:
+    if option.gpu:
         criterion_char = criterion_char.cuda()
         criterion_edge = criterion_edge.cuda()
 
@@ -152,7 +152,7 @@ if __name__ == '__main__':
             target_img = data_val[0]
             input_img = data_val[1]
             filenames = data_val[2]
-            if not option.cpu:
+            if option.gpu:
                 target_img = target_img.cuda()
                 input_img = input_img.cuda()
             psnr_val_rgb.append(image_util.batch_PSNR(input_img, target_img, False).item())
@@ -178,7 +178,7 @@ if __name__ == '__main__':
             optimizer.zero_grad()
             target_img = data[0]
             input_img = data[1]
-            if not option.cpu:
+            if option.gpu:
                 target_img = target_img.cuda()
                 input_img = input_img.cuda()
             if epoch > 5:
@@ -202,7 +202,7 @@ if __name__ == '__main__':
                     for ii, data_val in enumerate(val_loader, 0):
                         target_img = data_val[0]
                         input_img = data_val[1]
-                        if not option.cpu:
+                        if option.gpu:
                             target_img = target_img.cuda()
                             input_img = input_img.cuda()
                         filenames = data_val[2]
