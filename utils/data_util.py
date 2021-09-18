@@ -16,13 +16,10 @@ transforms_aug = [method for method in dir(augment) if callable(getattr(augment,
 class DataLoaderTrain(Dataset):
     def __init__(self, train_path, input_dir, gt_dir, img_options=None):
         super(DataLoaderTrain, self).__init__()
-
         input_files = sorted(os.listdir(os.path.join(train_path, input_dir)))
         target_files = sorted(os.listdir(os.path.join(train_path, gt_dir)))
-
         self.input_filenames = [os.path.join(train_path, input_dir, x) for x in input_files if is_image_file(x)]
         self.target_filenames = [os.path.join(train_path, gt_dir, x) for x in target_files if is_image_file(x)]
-
         self.img_options = img_options
         self.file_size = len(self.target_filenames)
 

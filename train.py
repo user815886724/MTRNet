@@ -49,7 +49,7 @@ torch.cuda.manual_seed_all(1234)
 
 
 ######### Set GPUs ###########
-if not option.gpu:
+if not option.use_gpu:
     pass
 elif not torch.cuda.is_available():
     sys.exit('There are not GPU can used!!!')
@@ -85,7 +85,7 @@ if __name__ == '__main__':
         raise Exception("Error optimizer...")
 
     ######### DataParallel ###########
-    if option.gpu:
+    if option.use_gpu:
         model = torch.nn.DataParallel(model)
         model.cuda()
 
@@ -124,7 +124,7 @@ if __name__ == '__main__':
     ######### Loss ###########
     criterion_char = losses.CharbonnierLoss()
     criterion_edge = losses.EdgeLoss(opt=option)
-    if option.gpu:
+    if option.use_gpu:
         criterion_char = criterion_char.cuda()
         criterion_edge = criterion_edge.cuda()
 
@@ -148,18 +148,18 @@ if __name__ == '__main__':
     ######### validation ###########
     with torch.no_grad():
         psnr_val_rgb = []
-        for ii, data_val in enumerate(val_loader, 0):
+        for ii, data_val in enumerate(tqdm(val_loader), 0):
             target_img = data_val[0]
             input_img = data_val[1]
             filenames = data_val[2]
-            if option.gpu:
+            if option.use_gpu:
                 target_img = target_img.cuda()
                 input_img = input_img.cuda()
             psnr_val_rgb.append(image_util.batch_PSNR(input_img, target_img, False).item())
         psnr_val_rgb = sum(psnr_val_rgb) / len_valset
 
     ######### train ###########
-    print('===> Start Epoch {} End Epoch {}'.format(start_epoch, option.nepoch))
+    print('===> Start Epoch {} End Epoch {}'.format(start_epoch, option.n_epoch))
 
     best_psnr = 0
     best_epoch = 0
@@ -178,7 +178,7 @@ if __name__ == '__main__':
             optimizer.zero_grad()
             target_img = data[0]
             input_img = data[1]
-            if option.gpu:
+            if option.use_gpu:
                 target_img = target_img.cuda()
                 input_img = input_img.cuda()
             if epoch > 5:
@@ -202,7 +202,7 @@ if __name__ == '__main__':
                     for ii, data_val in enumerate(val_loader, 0):
                         target_img = data_val[0]
                         input_img = data_val[1]
-                        if option.gpu:
+                        if option.use_gpu:
                             target_img = target_img.cuda()
                             input_img = input_img.cuda()
                         filenames = data_val[2]

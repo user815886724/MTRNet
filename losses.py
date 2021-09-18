@@ -18,7 +18,7 @@ class EdgeLoss(nn.Module):
         super(EdgeLoss, self).__init__()
         k = torch.Tensor([[.05, .25, .4, .25, .05]])
         self.kernel = torch.matmul(k.t(), k).unsqueeze(0).repeat(3, 1, 1, 1)
-        if torch.cuda.is_available() and not opt.cpu:
+        if torch.cuda.is_available() and opt.use_gpu:
             self.kernel = self.kernel.cuda()
         self.loss = CharbonnierLoss()
 
