@@ -157,6 +157,7 @@ if __name__ == '__main__':
                 input_img = input_img.cuda()
             psnr_val_rgb.append(image_util.batch_PSNR(input_img, target_img, False).item())
         psnr_val_rgb = sum(psnr_val_rgb) / len_valset
+    print("===> validation's psnr is {}".format(psnr_val_rgb))
 
     ######### train ###########
     print('===> Start Epoch {} End Epoch {}'.format(start_epoch, option.n_epoch))
