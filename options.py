@@ -4,7 +4,7 @@ class Options:
     def __init__(self, parser):
         # global settings
         parser.add_argument('--use_gpu', action='store_true', default=False, help='use gpu')
-        parser.add_argument('--batch_size', type=int, default=32, help='batch size')
+        parser.add_argument('--batch_size', type=int, default=1, help='batch size')
         parser.add_argument('--n_epoch', type=int, default=250, help='training epoch')
         parser.add_argument('--train_workers', type=int, default=0, help='train_dataloader workers')
         parser.add_argument('--eval_workers', type=int, default=0, help='eval_dataloader workers')

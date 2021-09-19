@@ -191,8 +191,8 @@ if __name__ == '__main__':
                 restored = torch.clamp(restored, 0, 1)
                 sam_restored = torch.clamp(sam_restored, 0, 1)
 
-                loss = np.sum(criterion_char(restored, target_img), criterion_char(sam_restored, target_img))
-            loss_scaler(loss, optimizer, parameters=model.parameters())
+                loss = criterion_char(restored, target_img)+criterion_char(sam_restored, target_img)
+            # loss_scaler(loss, optimizer, parameters=model.parameters())
             epoch_loss += loss.item()
 
             #### Evaluation ####
@@ -200,7 +200,7 @@ if __name__ == '__main__':
                 with torch.no_grad():
                     model.eval()
                     psnr_val_rgb = []
-                    for ii, data_val in enumerate(val_loader, 0):
+                    for ii, data_val in enumerate(tqdm(val_loader), 0):
                         target_img = data_val[0]
                         input_img = data_val[1]
                         if option.use_gpu:
