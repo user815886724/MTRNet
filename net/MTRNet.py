@@ -85,7 +85,7 @@ class Mlp(nn.Module):
 # LeFF: Local-enhanced Feed-Forward
 # 该层促进空间维度上相邻标记之间的相关性, 利用 Depth wise 增强空间维度之间的关联性
 class LeFF(nn.Module):
-    def __init__(self, dim=32, hidden_dim=128, active_layer=nn.GELU, drop=0.):
+    def __init__(self, dim=32, hidden_dim=128, active_layer=nn.GELU):
         super(LeFF, self).__init__()
         self.linear1 = nn.Sequential(
             nn.Linear(dim, hidden_dim),
