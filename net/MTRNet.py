@@ -595,10 +595,12 @@ class U_former(nn.Module):
 
 
         # Output Projection
-        if self.csff:
-            y = self.output_projection(deconv2)
-        else:
-            y = self.final_decoder(deconv2).permute(0, 2, 3, 1)
+        # if self.csff:
+        #     y = self.output_projection(deconv2)
+        # else:
+        #     y = self.final_decoder(deconv2).permute(0, 2, 3, 1)
+
+        y = self.output_projection(deconv2)
 
         # return x+y
         return [conv0, conv1, conv2], [deconv0, deconv1, deconv2, y]
@@ -1026,6 +1028,19 @@ class SkipUpSample(nn.Module):
         x = x + y
         return x
 
+
+class Uformer(nn.Module):
+    def __init__(self, embed_dim=32, image_size=128, in_channels=3, win_size=8, mlp_ratio=4.,qkv_bias=True, qk_scale=None, drop_rate=0., attention_drop=0., norm_layer=nn.LayerNorm, use_checkpoint=False,
+                 depths=(2, 2, 2, 2, 2, 2, 2), num_heads=(1, 2, 4, 8, 8, 4, 2), token_projection='linear',
+                 token_mlp='ffn', se_layer=False, drop_path_rate=0.1, dowsample=DownSample, upsample=UpSample, csff=False):
+        super(Uformer, self).__init__()
+        self.u_former = U_former(image_size, in_channels, embed_dim, win_size, mlp_ratio, qkv_bias, qk_scale,
+                                 drop_rate, attention_drop, norm_layer, use_checkpoint, depths, num_heads,
+                                 token_projection, token_mlp, se_layer, drop_path_rate, dowsample, upsample, csff=csff)
+
+    def forward(self, x):
+        feat_encoders, res_decoders = self.u_former(x)
+        return res_decoders[-1]
 
 
 
