@@ -65,10 +65,15 @@ def load_optim(optimizer, weights):
 
 # 获得模型的网络结构
 def get_architecture(opt):
-    from net.MTRNet import MPTR_SuperviseNet
+    from net.MTRNet import MPTR_SuperviseNet, Signal_MPRNet, MPTR_SuperviseNet_New
     arch = opt.arch
     if arch == 'MPTR_SuperviseNet':
         model = MPTR_SuperviseNet(image_size=opt.train_ps, embed_dim=opt.embed_dim, win_size=opt.win_size, token_mlp=opt.token_mlp)
+    elif arch == 'Signal_MPRNet':
+        model = Signal_MPRNet(embed_dim=opt.embed_dim)
+    elif arch == 'MPTR_SuperviseNet_New':
+        model = MPTR_SuperviseNet_New(image_size=opt.train_ps, embed_dim=opt.embed_dim, win_size=opt.win_size,
+                                  token_mlp=opt.token_mlp)
     else:
         raise Exception("Arch error!")
     return model

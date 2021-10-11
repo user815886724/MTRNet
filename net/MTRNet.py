@@ -6,6 +6,9 @@ import einops
 from timm.models.layers import DropPath, to_2tuple, trunc_normal_
 import torch.nn.functional as F
 
+import warnings
+warnings.filterwarnings("ignore")
+
 
 class InputProjection(nn.Module):
     def __init__(self, in_channel=3, out_channel=64, kernel_size=3, stride=1, norm_layer=None, active_layer=nn.LeakyReLU):
@@ -222,7 +225,7 @@ class CALayer(nn.Module):
 ##########################################################################
 ## Channel Attention Block (CAB)
 class CAB(nn.Module):
-    def __init__(self, n_feat, kernel_size, reduction, bias, act, norm):
+    def __init__(self, n_feat, kernel_size, reduction, bias, act, norm=None):
         super(CAB, self).__init__()
         modules_body = [
             conv(n_feat, n_feat, kernel_size, bias=bias),
@@ -231,13 +234,17 @@ class CAB(nn.Module):
         ]
 
         self.CA = CALayer(n_feat, reduction, bias=bias)
-        self.norm = norm(n_feat)
+        if norm is not None:
+            self.norm = norm(n_feat)
+        else:
+            self.norm = None
         self.body = nn.Sequential(*modules_body)
 
     def forward(self, x):
         res = self.body(x)
         res = self.CA(res)
-        res = self.norm(res)
+        if self.norm is not None:
+            res = self.norm(res)
         res += x
         return res
 
@@ -410,7 +417,20 @@ class MTR_Model(nn.Module):
         return [x1_img, x_img]
 
 
+class CSFF(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size=1, bias=False, norm=None):
+        super(CSFF, self).__init__()
+        if norm is not None:
+            self.norm = norm(out_channels)
+        else:
+            self.norm = None
+        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, bias=bias)
 
+    def forward(self, x):
+        y = self.conv(x)
+        if self.norm is not None:
+            y = self.norm(y)
+        return y
 
 
 
@@ -957,7 +977,7 @@ def window_reverse(windows, window_size, H, W):
 
 ## U-Net
 class Encoder(nn.Module):
-    def __init__(self, embed_dim, kernel_size, reduction, act, norm, bias):
+    def __init__(self, embed_dim, kernel_size, reduction, act, bias, norm=None):
         super(Encoder, self).__init__()
 
         self.encoder_level1 = [CAB(embed_dim, kernel_size, reduction, bias=bias, act=act, norm=norm) for _ in range(2)]
@@ -984,7 +1004,7 @@ class Encoder(nn.Module):
 
 
 class Decoder(nn.Module):
-    def __init__(self, embed_dim, kernel_size, reduction, act, norm, bias):
+    def __init__(self, embed_dim, kernel_size, reduction, act, bias, norm=None):
         super(Decoder, self).__init__()
 
         self.decoder_level1 = [CAB(embed_dim, kernel_size, reduction, bias=bias, act=act, norm=norm) for _ in range(2)]
@@ -1043,6 +1063,25 @@ class Uformer(nn.Module):
         return res_decoders[-1]
 
 
+class Signal_MPRNet(nn.Module):
+    def __init__(self, in_channel=3, embed_dim=32, kernel_size=3, reduction=4, bias=False):
+        super(Signal_MPRNet, self).__init__()
+        act = nn.PReLU()
+        self.shallow_feat = nn.Sequential(conv(in_channel, embed_dim, kernel_size, bias=bias),
+                                          CAB(embed_dim, kernel_size, reduction, bias=bias, act=act))
+        self.stage_encoder = Encoder(embed_dim, kernel_size, reduction, act, bias)
+        self.stage_decoder = Decoder(embed_dim, kernel_size, reduction, act, bias)
+        self.sam = SAM_S(embed_dim, kernel_size=1, bias=bias, norm=Layer_Norm)
+
+    def forward(self, x):
+        x1 = self.shallow_feat(x)
+        x1 = self.stage_encoder(x1)
+        res1 = self.stage_decoder(x1)
+        sam_feats, stage_img = self.sam(res1[0], x)
+        return stage_img
+
+
+
 
 # 需要在 MPTR 中增加 LayerNorm
 class MPTR_SuperviseNet(nn.Module):
@@ -1053,7 +1092,7 @@ class MPTR_SuperviseNet(nn.Module):
         super(MPTR_SuperviseNet, self).__init__()
         act = nn.PReLU()
         self.shallow_feat = nn.Sequential(conv(in_channel, embed_dim, kernel_size, bias=bias),
-                                           CAB(embed_dim, kernel_size, reduction, bias=bias, act=act, norm=Layer_Norm))
+                                           CAB(embed_dim, kernel_size, reduction, bias=bias, act=act))
         self.u_former = U_former(image_size, in_channels, embed_dim, win_size, mlp_ratio, qkv_bias, qk_scale,
                                   drop_rate, attention_drop, norm_layer, use_checkpoint, depths, num_heads,
                                   token_projection, token_mlp, se_layer, drop_path_rate, dowsample, upsample, csff=csff)
@@ -1061,10 +1100,10 @@ class MPTR_SuperviseNet(nn.Module):
         self.input_projection = InputProjection(in_channel=in_channels, out_channel=embed_dim, kernel_size=3, stride=1,
                                                 active_layer=nn.LeakyReLU)
         self.pos_drop = nn.Dropout(p=drop_rate)
-        self.stage_encoder = Encoder(embed_dim, kernel_size, reduction, act, Layer_Norm, bias)
-        self.stage_decoder = Decoder(embed_dim, kernel_size, reduction, act, Layer_Norm, bias)
-        self.sam = SAM_S(embed_dim,  norm=Layer_Norm,kernel_size=1, bias=bias)
-        
+        self.stage_encoder = Encoder(embed_dim, kernel_size, reduction, act, bias, norm=Layer_Norm)
+        self.stage_decoder = Decoder(embed_dim, kernel_size, reduction, act, bias, norm=Layer_Norm)
+        self.sam = SAM_S(embed_dim, kernel_size=1, bias=bias, norm=Layer_Norm)
+
     def forward(self, x):
         B, C, H, W = x.shape
 
@@ -1120,8 +1159,6 @@ class MPTR_SuperviseNet(nn.Module):
 
         # uf_decoder = res_decoders[2].permute(0, 3, 1, 2)
         res_img = res_decoders[-1]
-
-
         return  stage_img, res_img
 
 
@@ -1137,13 +1174,17 @@ class DownSample_S(nn.Module):
 
 ## Supervised Attention Module
 class SAM_S(nn.Module):
-    def __init__(self, n_feat, norm, kernel_size, bias):
+    def __init__(self, n_feat, kernel_size, bias, norm=None):
         super(SAM_S, self).__init__()
         self.conv1 = conv(n_feat, n_feat, kernel_size, bias=bias)
         self.conv2 = conv(n_feat, 3, kernel_size, bias=bias)
         self.conv3 = conv(3, n_feat, kernel_size, bias=bias)
-        self.norm1 = norm(n_feat)
-        self.norm2 = norm(3)
+        if norm is not None:
+            self.norm1 = norm(n_feat)
+            self.norm2 = norm(3)
+        else:
+            self.norm1 = None
+            self.norm2 = None
 
     def forward(self, x, x_img):
         x1 = self.conv1(x)
@@ -1151,8 +1192,10 @@ class SAM_S(nn.Module):
         x2 = torch.sigmoid(self.conv3(img))
         x1 = x1*x2
         x1 = x1+x
-        self.norm1(x1)
-        self.norm2(img)
+        if self.norm1 is not None:
+            x1 = self.norm1(x1)
+        # if self.norm2 is not None:
+        #     img = self.norm2(img)
         return x1, img
 
 
@@ -1167,9 +1210,52 @@ class Layer_Norm(nn.Module):
         return y
 
 
+class MPTR_SuperviseNet_New(nn.Module):
+    def __init__(self, in_channel=3, embed_dim=32, kernel_size=3, reduction=4, bias=False, image_size=128,
+                 in_channels=3, win_size=8, mlp_ratio=4.,
+                 qkv_bias=True, qk_scale=None, drop_rate=0., attention_drop=0., norm_layer=nn.LayerNorm,
+                 use_checkpoint=False, norm=None,
+                 depths=(2, 2, 2, 2, 2, 2, 2), num_heads=(1, 2, 4, 8, 8, 4, 2), token_projection='linear',
+                 token_mlp='ffn', se_layer=False, drop_path_rate=0.1, dowsample=DownSample, upsample=UpSample,
+                 csff=True):
+        super(MPTR_SuperviseNet_New, self).__init__()
+        act = nn.PReLU()
+        self.shallow_feat = nn.Sequential(conv(in_channel, embed_dim, kernel_size, bias=bias),
+                                          CAB(embed_dim, kernel_size, reduction, bias=bias, act=act))
+        self.u_former = U_former(image_size, in_channels, embed_dim, win_size, mlp_ratio, qkv_bias, qk_scale,
+                                 drop_rate, attention_drop, norm_layer, use_checkpoint, depths, num_heads,
+                                 token_projection, token_mlp, se_layer, drop_path_rate, dowsample, upsample, csff=csff)
+        self.concat = conv(embed_dim * 2, embed_dim, kernel_size=3, bias=qkv_bias)
+        self.input_projection = InputProjection(in_channel=in_channels, out_channel=embed_dim, kernel_size=3, stride=1,
+                                                active_layer=nn.LeakyReLU)
+        self.pos_drop = nn.Dropout(p=drop_rate)
+        self.stage_encoder = Encoder(embed_dim, kernel_size, reduction, act, bias, norm=norm)
+        self.stage_decoder = Decoder(embed_dim, kernel_size, reduction, act, bias, norm=norm)
+        self.sam = SAM_S(embed_dim, kernel_size=1, bias=bias, norm=norm)
 
+    def forward(self, x):
 
+        x1 = self.shallow_feat(x)
 
+        feat_encoders = self.stage_encoder(x1)
+
+        ## Pass features through Decoder of Stage 1
+        res_decoders = self.stage_decoder(feat_encoders)
+
+        ## Concat deep features
+
+        sam_feats, stage_img = self.sam(res_decoders[0], x)
+
+        y = self.input_projection(x)
+        y = self.pos_drop(y)
+        if sam_feats is not None:
+            y = self.concat(torch.cat([sam_feats, y.permute(0, 3, 1, 2)], 1)).permute(0, 2, 3, 1)
+
+        feat_encoders, res_decoders = self.u_former(y, encoder_outs=feat_encoders, decoder_outs=res_decoders)
+
+        # uf_decoder = res_decoders[2].permute(0, 3, 1, 2)
+        res_img = res_decoders[-1]
+        return stage_img, res_img
 
 
 

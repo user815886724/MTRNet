@@ -4,26 +4,27 @@ class Options:
     def __init__(self, parser):
         # global settings
         parser.add_argument('--use_gpu', action='store_true', default=False, help='use gpu')
-        parser.add_argument('--batch_size', type=int, default=1, help='batch size')
+        parser.add_argument('--batch_size', type=int, default=4, help='batch size')
         parser.add_argument('--n_epoch', type=int, default=250, help='training epoch')
         parser.add_argument('--train_workers', type=int, default=0, help='train_dataloader workers')
         parser.add_argument('--eval_workers', type=int, default=0, help='eval_dataloader workers')
         parser.add_argument('--dataset', type=str, default ='SIDD')
-        parser.add_argument('--pretrain_weights', type=str, default=os.path.join('model', 'model_best.pth'),
+        parser.add_argument('--pretrain_weights', type=str, default=os.path.join('model','models', 'model_best.pth'),
                             help='path of pretrained_weights')
         parser.add_argument('--optimizer', type=str, default='adamw', help='optimizer for training')
         parser.add_argument('--lr_initial', type=float, default=0.0002, help='initial learning rate')
         parser.add_argument('--weight_decay', type=float, default=0.02, help='weight decay')
-        parser.add_argument('--gpu', type=str, default='0,1', help='GPUs')
+        # parser.add_argument('--gpu', type=str, default='0,1', help='GPUs')
         parser.add_argument('--arch', type=str, default='MPTR_SuperviseNet', help='archtechture')
         parser.add_argument('--mode', type=str, default='denoising', help='image restoration mode')
 
 
         # args for saving
         parser.add_argument('--save_dir', type=str, default='model', help='save dir')
-        parser.add_argument('--save_images', action='store_true', default=False)
+        parser.add_argument('--save_images', action='store_true', default=True)
         parser.add_argument('--env', type=str, default='_', help='env')
         parser.add_argument('--checkpoint', type=int, default=50, help='checkpoint')
+        parser.add_argument('--result_dir', type=str, default=os.path.join('model','results'))
 
         # args for Model
         parser.add_argument('--norm_layer', type=str, default='nn.LayerNorm', help='normalize layer in transformer')
@@ -50,6 +51,7 @@ class Options:
         parser.add_argument('--val_dir', type=str, default=os.path.join('data', 'SIDD', 'val'), help='dir of train data')
         parser.add_argument('--warmup', action='store_true', default=False, help='warmup')
         parser.add_argument('--warmup_epochs', type=int, default=3, help='epochs for warmup')
+
 
         self.parser = parser
 
